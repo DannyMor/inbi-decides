@@ -93,6 +93,82 @@ async function fetchOpenGraph(url: string): Promise<{ imageUrl: string; title: s
   }
 }
 
+/**
+ * Pinterest app "share" links. These are redirects that no free CORS-friendly
+ * service can follow (Pinterest antibot blocks proxies), so we reject them
+ * with guidance instead of saving a URL that can never render.
+ */
+export function isPinterestShortLink(url: string): boolean {
+  try {
+    return new URL(url).hostname === 'pin.it'
+  } catch {
+    return false
+  }
+}
+
+/** Matches pin pages on any Pinterest domain (pinterest.com, ru.pinterest.com, pinterest.co.uk, …). */
+export function extractPinterestPinId(url: string): string | null {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  if (!/(^|\.)pinterest\.[a-z.]+$/.test(parsed.hostname)) return null
+  const match = parsed.pathname.match(/^\/pin\/(\d+)/)
+  return match ? match[1] : null
+}
+
+interface PinterestPin {
+  images?: Record<string, { url?: string } | undefined>
+  grid_title?: string | null
+  description?: string | null
+}
+
+/** Pinterest's public widget API — CORS-enabled, no auth, not blocked by their antibot. */
+async function fetchPinterestPin(pinId: string): Promise<{ imageUrl: string; title: string } | null> {
+  try {
+    const response = await fetch(
+      `https://widgets.pinterest.com/v3/pidgets/pins/info/?pin_ids=${pinId}`,
+    )
+    if (!response.ok) return null
+    const payload = (await response.json()) as { status?: string; data?: PinterestPin[] }
+    const pin = payload.data?.[0]
+    if (payload.status !== 'success' || !pin?.images) return null
+    // Prefer the largest size the widget API exposes ('orig' beats any pixel size).
+    const rank = (key: string) => (key.startsWith('orig') ? Infinity : parseInt(key) || 0)
+    const sizes = Object.keys(pin.images).sort((a, b) => rank(b) - rank(a))
+    const imageUrl = sizes.map((size) => pin.images?.[size]?.url).find(Boolean)
+    if (!imageUrl) return null
+    return { imageUrl, title: pin.grid_title || pin.description?.trim() || '' }
+  } catch {
+    return null
+  }
+}
+
+/** Last resort: fetch the page HTML through a CORS proxy and read its OpenGraph tags. */
+async function fetchOpenGraphViaProxy(
+  url: string,
+): Promise<{ imageUrl: string; title: string } | null> {
+  try {
+    const response = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`)
+    if (!response.ok) return null
+    const html = await response.text()
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const imageUrl =
+      doc.querySelector('meta[property="og:image"]')?.getAttribute('content') ??
+      doc.querySelector('meta[name="twitter:image"]')?.getAttribute('content')
+    if (!imageUrl || !/^https?:\/\//.test(imageUrl)) return null
+    const title =
+      doc.querySelector('meta[property="og:title"]')?.getAttribute('content') ??
+      doc.querySelector('title')?.textContent ??
+      ''
+    return { imageUrl, title: title.trim() }
+  } catch {
+    return null
+  }
+}
+
 export async function resolveUrl(rawUrl: string): Promise<ResolvedImage> {
   const url = rawUrl.trim()
 
@@ -107,7 +183,22 @@ export async function resolveUrl(rawUrl: string): Promise<ResolvedImage> {
     return { imageUrl: googleImage, sourceUrl, title: titleFromUrl(googleImage), resolved: true }
   }
 
-  const openGraph = await fetchOpenGraph(url)
+  if (isPinterestShortLink(url)) {
+    throw new Error(
+      'pin.it share links cannot be resolved — open the link in a browser and paste the full pinterest.com/pin/… address instead',
+    )
+  }
+
+  const pinId = extractPinterestPinId(url)
+  if (pinId) {
+    const pin = await fetchPinterestPin(pinId)
+    if (pin) {
+      return { imageUrl: pin.imageUrl, sourceUrl: url, title: pin.title, resolved: true }
+    }
+  }
+
+  // Generic pages: try microlink first, then the CORS-proxy OpenGraph fallback.
+  const openGraph = (await fetchOpenGraph(url)) ?? (await fetchOpenGraphViaProxy(url))
   if (openGraph) {
     return {
       imageUrl: openGraph.imageUrl,

@@ -1,6 +1,7 @@
 import { ArrowLeft, ExternalLink, SkipForward } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { QueryError } from '@/components/query-error'
 import { SmartImage } from '@/components/smart-image'
 import { StarRating } from '@/components/star-rating'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -12,7 +13,7 @@ export function VotingPage() {
   const { categoryId = '' } = useParams()
   const navigate = useNavigate()
   const { data: categories } = useCategories()
-  const { data: queue, isLoading } = useVotingQueue(categoryId)
+  const { data: queue, isLoading, error } = useVotingQueue(categoryId)
   const rate = useRateFromQueue(categoryId)
   // Skipped image ids stay rating=null in Firestore; hide them locally for this session.
   const [skippedIds, setSkippedIds] = useState<string[]>([])
@@ -75,6 +76,15 @@ export function VotingPage() {
         <Skeleton className="h-8 w-40" />
         <Skeleton className="aspect-square w-full" />
         <Skeleton className="mx-auto h-14 w-72" />
+      </main>
+    )
+  }
+
+  if (error) {
+    return (
+      <main className="mx-auto flex min-h-dvh w-full max-w-lg flex-col p-4">
+        <h1 className="text-xl font-semibold">{title}</h1>
+        <QueryError error={error} />
       </main>
     )
   }

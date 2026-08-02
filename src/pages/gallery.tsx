@@ -2,6 +2,7 @@ import { ArrowLeft, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ImageDetailDialog } from '@/components/image-detail-dialog'
+import { QueryError } from '@/components/query-error'
 import { SmartImage } from '@/components/smart-image'
 import { StarRow } from '@/components/star-rating'
 import { Badge } from '@/components/ui/badge'
@@ -18,7 +19,7 @@ const STAR_FILTERS: StarFilter[] = ['all', 5, 4, 3, 2, 1, 'unrated']
 export function GalleryPage() {
   const { categoryId = '' } = useParams()
   const { data: categories } = useCategories()
-  const { data: images, isLoading } = useGallery(categoryId)
+  const { data: images, isLoading, error } = useGallery(categoryId)
   const [selected, setSelected] = useState<InspirationImage | null>(null)
   const [search, setSearch] = useState('')
   const [starFilter, setStarFilter] = useState<StarFilter>('all')
@@ -102,6 +103,8 @@ export function GalleryPage() {
           Archived
         </button>
       </div>
+
+      {error && <QueryError error={error} />}
 
       {isLoading && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

@@ -159,6 +159,10 @@ function ImportSection() {
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="import-urls">URLs — one per line</Label>
+            <p className="text-xs text-muted-foreground">
+              Full pinterest.com/pin/… links, direct image links, or article pages work. pin.it
+              share links don&apos;t — open them in a browser first and copy the full address.
+            </p>
             <Textarea
               id="import-urls"
               rows={5}

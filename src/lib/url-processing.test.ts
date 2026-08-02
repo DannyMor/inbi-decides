@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   extractGoogleImagesUrl,
+  extractPinterestPinId,
+  isPinterestShortLink,
   isDirectImageUrl,
   splitUrlList,
   titleFromUrl,
@@ -54,6 +56,30 @@ describe('titleFromUrl', () => {
 
   it('falls back to the hostname for bare domains', () => {
     expect(titleFromUrl('https://example.com/')).toBe('example.com')
+  })
+})
+
+describe('extractPinterestPinId', () => {
+  it('extracts the pin id from pin pages on any Pinterest domain', () => {
+    expect(extractPinterestPinId('https://www.pinterest.com/pin/99360735500167749/')).toBe(
+      '99360735500167749',
+    )
+    expect(extractPinterestPinId('https://ru.pinterest.com/pin/123456/')).toBe('123456')
+    expect(extractPinterestPinId('https://www.pinterest.co.uk/pin/42/sent/')).toBe('42')
+  })
+
+  it('returns null for non-pin Pinterest pages and other sites', () => {
+    expect(extractPinterestPinId('https://www.pinterest.com/danny/board-name/')).toBe(null)
+    expect(extractPinterestPinId('https://notpinterest.com/pin/123/')).toBe(null)
+    expect(extractPinterestPinId('https://evil.com/?x=pinterest.com/pin/1')).toBe(null)
+  })
+})
+
+describe('isPinterestShortLink', () => {
+  it('detects pin.it share links only', () => {
+    expect(isPinterestShortLink('https://pin.it/13yooxDHR')).toBe(true)
+    expect(isPinterestShortLink('https://www.pinterest.com/pin/123/')).toBe(false)
+    expect(isPinterestShortLink('https://pin.it.evil.com/x')).toBe(false)
   })
 })
 
