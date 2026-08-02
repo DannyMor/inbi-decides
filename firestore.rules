@@ -1,0 +1,48 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return signedIn() && userRole() == 'admin';
+    }
+
+    function isVoter() {
+      return signedIn() && (userRole() == 'voter' || userRole() == 'admin');
+    }
+
+    // Roles: readable by the signed-in owner, writable only from the Firebase console.
+    match /users/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    match /categories/{categoryId} {
+      allow read: if isVoter();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /images/{imageId} {
+      allow read: if isVoter();
+      allow create, delete: if isAdmin();
+      // Admin can update anything; a voter may only touch rating, notes,
+      // archived (broken-image flow) and the updatedAt stamp.
+      allow update: if isAdmin()
+        || (isVoter()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['rating', 'notes', 'archived', 'updatedAt'])
+            && (request.resource.data.rating == null
+                || (request.resource.data.rating is int
+                    && request.resource.data.rating >= 1
+                    && request.resource.data.rating <= 5)));
+    }
+  }
+}
