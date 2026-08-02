@@ -32,7 +32,7 @@ import {
   useUpdateCategory,
   useUpdateImage,
 } from '@/hooks/queries'
-import { splitUrlList } from '@/lib/url-processing'
+import { isDirectImageUrl, resolveUrl, splitUrlList } from '@/lib/url-processing'
 import type { Category, InspirationImage } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -341,14 +341,39 @@ function EditImageDialog({
   const [title, setTitle] = useState('')
   const [imageUrl, setImageUrl] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
+  const [resolving, setResolving] = useState(false)
+  const [resolveError, setResolveError] = useState('')
 
   useEffect(() => {
     setTitle(image?.title ?? '')
     setImageUrl(image?.imageUrl ?? '')
     setSourceUrl(image?.sourceUrl ?? '')
+    setResolveError('')
   }, [image])
 
   if (!image) return null
+
+  // Paste any link — a pin page gets resolved to its actual image, like import does.
+  const maybeResolve = async (value: string) => {
+    const url = value.trim()
+    if (!url || isDirectImageUrl(url) || url === image.imageUrl) return
+    setResolving(true)
+    setResolveError('')
+    try {
+      const resolved = await resolveUrl(url)
+      if (!resolved.resolved) {
+        setResolveError('Could not extract an image from that page — paste a direct image link.')
+        return
+      }
+      setImageUrl(resolved.imageUrl)
+      setSourceUrl(resolved.sourceUrl)
+      if (!title.trim() && resolved.title) setTitle(resolved.title)
+    } catch (cause) {
+      setResolveError(cause instanceof Error ? cause.message : 'Could not resolve that link.')
+    } finally {
+      setResolving(false)
+    }
+  }
 
   const save = () => {
     updateImage.mutate({ id: image.id, patch: { title, imageUrl, sourceUrl } })
@@ -364,13 +389,24 @@ function EditImageDialog({
           <Input id="edit-title" value={title} onChange={(event) => setTitle(event.target.value)} />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="edit-image-url">Image link (direct link to the picture)</Label>
-          <Input
-            id="edit-image-url"
-            value={imageUrl}
-            onChange={(event) => setImageUrl(event.target.value)}
-            placeholder="https://i.pinimg.com/…jpg"
-          />
+          <Label htmlFor="edit-image-url">Image link — paste a pin page or a direct image</Label>
+          <div className="relative">
+            <Input
+              id="edit-image-url"
+              value={imageUrl}
+              onChange={(event) => setImageUrl(event.target.value)}
+              onBlur={(event) => void maybeResolve(event.target.value)}
+              onPaste={(event) =>
+                void maybeResolve(event.clipboardData.getData('text'))
+              }
+              placeholder="https://www.pinterest.com/pin/… or https://…jpg"
+              className={cn(resolving && 'pr-9')}
+            />
+            {resolving && (
+              <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+            )}
+          </div>
+          {resolveError && <p className="text-xs text-destructive">{resolveError}</p>}
         </div>
         {imageUrl && (
           <img
