@@ -13,6 +13,7 @@ import {
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link } from 'react-router-dom'
+import { ManageImagesSection } from '@/components/manage-images'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -285,10 +286,8 @@ export function AdminPage() {
       </header>
       <CreateCategorySection />
       <ImportSection />
+      <ManageImagesSection />
       <ManageCategoriesSection />
-      <p className="pb-4 text-center text-xs text-muted-foreground">
-        Manage images from each category&apos;s gallery — tap an image to edit, archive, or delete.
-      </p>
     </main>
   )
 }
