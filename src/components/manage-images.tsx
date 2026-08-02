@@ -1,5 +1,6 @@
 import { Archive, ArchiveRestore, ExternalLink, Pencil, Star, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { QueryError } from '@/components/query-error'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogTitle } from '@/components/ui/dialog'
@@ -103,7 +104,7 @@ function EditImageDialog({
 export function ManageImagesSection() {
   const { data: categories } = useCategories()
   const [categoryId, setCategoryId] = useState('')
-  const { data: images, isLoading } = useGallery(categoryId)
+  const { data: images, isLoading, error } = useGallery(categoryId)
   const deleteImage = useDeleteImage(categoryId)
   const updateImage = useUpdateImage(categoryId)
   const [editing, setEditing] = useState<InspirationImage | null>(null)
@@ -133,7 +134,9 @@ export function ManageImagesSection() {
           </div>
         )}
 
-        {categoryId && !isLoading && (images ?? []).length === 0 && (
+        {categoryId && error && <QueryError error={error} />}
+
+        {categoryId && !isLoading && !error && (images ?? []).length === 0 && (
           <p className="text-sm text-muted-foreground">No images in this category yet.</p>
         )}
 
