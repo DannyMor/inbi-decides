@@ -36,15 +36,3 @@ export const imageSchema = z.object({
   archived: z.boolean().default(false),
 })
 export type InspirationImage = z.infer<typeof imageSchema>
-
-export const newCategoryFormSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  emoji: z.string().max(8),
-})
-export type NewCategoryForm = z.infer<typeof newCategoryFormSchema>
-
-export const importFormSchema = z.object({
-  categoryId: z.string().min(1, 'Pick a category'),
-  urls: z.string().min(1, 'Paste at least one URL'),
-})
-export type ImportForm = z.infer<typeof importFormSchema>

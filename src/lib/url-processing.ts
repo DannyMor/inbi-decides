@@ -169,6 +169,29 @@ async function fetchOpenGraphViaProxy(
   }
 }
 
+/**
+ * Checks the URL actually loads as an image in this browser. Image loading is
+ * not CORS-restricted, so this works cross-origin (Pinterest CDN, etc.).
+ */
+export function testImageReachable(url: string, timeoutMs = 8000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = new Image()
+    const timer = setTimeout(() => {
+      probe.src = ''
+      resolve(false)
+    }, timeoutMs)
+    probe.onload = () => {
+      clearTimeout(timer)
+      resolve(true)
+    }
+    probe.onerror = () => {
+      clearTimeout(timer)
+      resolve(false)
+    }
+    probe.src = url
+  })
+}
+
 export async function resolveUrl(rawUrl: string): Promise<ResolvedImage> {
   const url = rawUrl.trim()
 

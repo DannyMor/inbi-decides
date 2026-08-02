@@ -1,279 +1,597 @@
-import { zodResolver } from '@hookform/resolvers/zod'
 import {
   Archive,
   ArchiveRestore,
   ArrowLeft,
   CheckCircle2,
+  ExternalLink,
   Images,
   Loader2,
+  Pencil,
   Plus,
+  Star,
   Trash2,
   XCircle,
 } from 'lucide-react'
-import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ManageImagesSection } from '@/components/manage-images'
+import { importUrls, type ImportLineResult } from '@/components/import-urls'
+import { QueryError } from '@/components/query-error'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import {
   useCategories,
   useCreateCategory,
   useCreateImage,
   useDeleteCategory,
+  useDeleteImage,
+  useGallery,
   useUpdateCategory,
+  useUpdateImage,
 } from '@/hooks/queries'
-import { resolveUrl, splitUrlList } from '@/lib/url-processing'
-import {
-  importFormSchema,
-  newCategoryFormSchema,
-  type ImportForm,
-  type NewCategoryForm,
-} from '@/lib/types'
+import { splitUrlList } from '@/lib/url-processing'
+import type { Category, InspirationImage } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
-interface ImportResult {
-  url: string
-  title: string
-  resolved: boolean
-  error?: string
-}
+// --- small shared pieces ---
 
-function CreateCategorySection() {
-  const { data: categories } = useCategories()
-  const createCategory = useCreateCategory()
-  const form = useForm<NewCategoryForm>({
-    resolver: zodResolver(newCategoryFormSchema),
-    defaultValues: { name: '', emoji: '' },
-  })
-
-  const onSubmit = form.handleSubmit(async (values) => {
-    await createCategory.mutateAsync({
-      name: values.name,
-      emoji: values.emoji ?? '',
-      order: categories?.length ?? 0,
-    })
-    form.reset()
-  })
-
+function ImportResults({ results }: { results: ImportLineResult[] }) {
+  if (results.length === 0) return null
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Create Category</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={onSubmit} className="flex flex-col gap-3">
-          <div className="flex gap-2">
-            <div className="w-20">
-              <Label htmlFor="category-emoji" className="sr-only">
-                Emoji
-              </Label>
-              <Input id="category-emoji" placeholder="🏠" {...form.register('emoji')} />
-            </div>
-            <div className="flex-1">
-              <Label htmlFor="category-name" className="sr-only">
-                Name
-              </Label>
-              <Input id="category-name" placeholder="Kitchen" {...form.register('name')} />
-            </div>
-            <Button type="submit" disabled={createCategory.isPending} aria-label="Add category">
-              <Plus />
-            </Button>
-          </div>
-          {form.formState.errors.name && (
-            <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>
+    <ul className="flex flex-col gap-1.5">
+      {results.map((result) => (
+        <li key={result.url} className="flex items-start gap-2 text-sm">
+          {result.ok ? (
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-green-600" />
+          ) : (
+            <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
           )}
-        </form>
-      </CardContent>
-    </Card>
+          <span className="min-w-0">
+            <span className="block truncate">{result.title || result.url}</span>
+            {result.message && <span className="text-xs text-destructive">{result.message}</span>}
+          </span>
+        </li>
+      ))}
+    </ul>
   )
 }
 
-function ImportSection() {
-  const { data: categories } = useCategories()
+function UrlsField({
+  value,
+  onChange,
+  autoFocus,
+}: {
+  value: string
+  onChange: (value: string) => void
+  autoFocus?: boolean
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor="urls-field">Image links — one per line</Label>
+      <Textarea
+        id="urls-field"
+        rows={4}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={'https://www.pinterest.com/pin/…\nhttps://….jpg'}
+        autoFocus={autoFocus}
+      />
+      <p className="text-xs text-muted-foreground">
+        pinterest.com/pin links, direct images, or article pages. pin.it links: open in browser
+        first, copy the full address.
+      </p>
+    </div>
+  )
+}
+
+function Thumb({ image }: { image: InspirationImage }) {
+  const [broken, setBroken] = useState(false)
+  useEffect(() => setBroken(false), [image.imageUrl])
+  if (broken) {
+    return (
+      <div className="flex size-14 shrink-0 items-center justify-center rounded-md bg-muted text-lg">
+        🚫
+      </div>
+    )
+  }
+  return (
+    <img
+      src={image.imageUrl}
+      alt=""
+      loading="lazy"
+      onError={() => setBroken(true)}
+      className="size-14 shrink-0 rounded-md object-cover"
+    />
+  )
+}
+
+// --- create category (name + emoji + at least one image) ---
+
+function CreateCategoryDialog({
+  open,
+  onClose,
+  onCreated,
+  nextOrder,
+}: {
+  open: boolean
+  onClose: () => void
+  onCreated: (id: string) => void
+  nextOrder: number
+}) {
+  const createCategory = useCreateCategory()
   const createImage = useCreateImage()
-  const [results, setResults] = useState<ImportResult[]>([])
-  const [importing, setImporting] = useState(false)
-  const form = useForm<ImportForm>({
-    resolver: zodResolver(importFormSchema),
-    defaultValues: { categoryId: '', urls: '' },
-  })
+  const [name, setName] = useState('')
+  const [emoji, setEmoji] = useState('')
+  const [urls, setUrls] = useState('')
+  const [results, setResults] = useState<ImportLineResult[]>([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
 
-  const activeCategories = (categories ?? []).filter((category) => !category.archived)
+  useEffect(() => {
+    if (open) {
+      setName('')
+      setEmoji('')
+      setUrls('')
+      setResults([])
+      setError('')
+    }
+  }, [open])
 
-  const onSubmit = form.handleSubmit(async (values) => {
-    const urls = splitUrlList(values.urls)
-    if (urls.length === 0) {
-      form.setError('urls', { message: 'No valid http(s) URLs found' })
+  const submit = async () => {
+    const urlList = splitUrlList(urls)
+    if (!name.trim()) {
+      setError('Give the category a name')
       return
     }
-    setImporting(true)
-    setResults([])
-    const nextResults: ImportResult[] = []
-    for (const url of urls) {
-      try {
-        const resolved = await resolveUrl(url)
-        await createImage.mutateAsync({
-          categoryId: values.categoryId,
-          imageUrl: resolved.imageUrl,
-          sourceUrl: resolved.sourceUrl,
-          title: resolved.title,
-        })
-        nextResults.push({ url, title: resolved.title, resolved: resolved.resolved })
-      } catch (cause) {
-        nextResults.push({
-          url,
-          title: '',
-          resolved: false,
-          error: cause instanceof Error ? cause.message : 'Failed to save',
-        })
-      }
-      setResults([...nextResults])
+    if (urlList.length === 0) {
+      setError('Add at least one image link')
+      return
     }
-    setImporting(false)
-    form.resetField('urls')
-  })
+    setError('')
+    setBusy(true)
+    try {
+      const categoryId = await createCategory.mutateAsync({
+        name: name.trim(),
+        emoji: emoji.trim(),
+        order: nextOrder,
+      })
+      const outcome = await importUrls(
+        urlList,
+        (input) => createImage.mutateAsync({ categoryId, ...input }),
+        setResults,
+      )
+      if (outcome.every((line) => line.ok)) {
+        onCreated(categoryId)
+        onClose()
+      } else {
+        onCreated(categoryId)
+        setError('Category created — some images failed, see below. Close and fix or retry.')
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Import</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={onSubmit} className="flex flex-col gap-3">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="import-category">Category</Label>
-            <Select id="import-category" {...form.register('categoryId')}>
-              <option value="">Pick a category…</option>
-              {activeCategories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {`${category.emoji} ${category.name}`.trim()}
-                </option>
-              ))}
-            </Select>
-            {form.formState.errors.categoryId && (
-              <p className="text-sm text-destructive">{form.formState.errors.categoryId.message}</p>
-            )}
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="import-urls">URLs — one per line</Label>
-            <p className="text-xs text-muted-foreground">
-              Full pinterest.com/pin/… links, direct image links, or article pages work. pin.it
-              share links don&apos;t — open them in a browser first and copy the full address.
-            </p>
-            <Textarea
-              id="import-urls"
-              rows={5}
-              placeholder={'https://www.pinterest.com/pin/…\nhttps://i.pinimg.com/…jpg'}
-              {...form.register('urls')}
+    <Dialog open={open} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <DialogTitle>New category</DialogTitle>
+        <div className="flex gap-2">
+          <div className="w-20">
+            <Label htmlFor="new-emoji" className="sr-only">
+              Emoji
+            </Label>
+            <Input
+              id="new-emoji"
+              value={emoji}
+              onChange={(event) => setEmoji(event.target.value)}
+              placeholder="🏠"
             />
-            {form.formState.errors.urls && (
-              <p className="text-sm text-destructive">{form.formState.errors.urls.message}</p>
-            )}
           </div>
-          <Button type="submit" disabled={importing}>
-            {importing ? <Loader2 className="animate-spin" /> : <Images />}
-            {importing ? 'Importing…' : 'Save'}
-          </Button>
-        </form>
-
-        {results.length > 0 && (
-          <ul className="mt-4 flex flex-col gap-2">
-            {results.map((result) => (
-              <li key={result.url} className="flex items-start gap-2 text-sm">
-                {result.error ? (
-                  <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
-                ) : (
-                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-green-600" />
-                )}
-                <span className="min-w-0">
-                  <span className="block truncate font-medium">{result.title || result.url}</span>
-                  {result.error && <span className="text-destructive">{result.error}</span>}
-                  {!result.error && !result.resolved && (
-                    <span className="text-muted-foreground">
-                      Could not extract an image — saved the page URL, edit it later.
-                    </span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+          <div className="flex-1">
+            <Label htmlFor="new-name" className="sr-only">
+              Name
+            </Label>
+            <Input
+              id="new-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Kitchen"
+              autoFocus
+            />
+          </div>
+        </div>
+        <UrlsField value={urls} onChange={setUrls} />
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <ImportResults results={results} />
+        <Button onClick={() => void submit()} disabled={busy}>
+          {busy ? <Loader2 className="animate-spin" /> : <Plus />}
+          {busy ? 'Creating…' : 'Create'}
+        </Button>
+      </div>
+    </Dialog>
   )
 }
 
-function ManageCategoriesSection() {
-  const { data: categories } = useCategories()
+// --- edit category (rename / emoji) ---
+
+function EditCategoryDialog({
+  category,
+  onClose,
+}: {
+  category: Category | null
+  onClose: () => void
+}) {
+  const updateCategory = useUpdateCategory()
+  const [name, setName] = useState('')
+  const [emoji, setEmoji] = useState('')
+
+  useEffect(() => {
+    setName(category?.name ?? '')
+    setEmoji(category?.emoji ?? '')
+  }, [category])
+
+  if (!category) return null
+
+  const save = () => {
+    if (!name.trim()) return
+    updateCategory.mutate({ id: category.id, patch: { name: name.trim(), emoji: emoji.trim() } })
+    onClose()
+  }
+
+  return (
+    <Dialog open onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <DialogTitle>Edit category</DialogTitle>
+        <div className="flex gap-2">
+          <div className="w-20">
+            <Label htmlFor="edit-cat-emoji" className="sr-only">
+              Emoji
+            </Label>
+            <Input
+              id="edit-cat-emoji"
+              value={emoji}
+              onChange={(event) => setEmoji(event.target.value)}
+              placeholder="🏠"
+            />
+          </div>
+          <div className="flex-1">
+            <Label htmlFor="edit-cat-name" className="sr-only">
+              Name
+            </Label>
+            <Input id="edit-cat-name" value={name} onChange={(event) => setName(event.target.value)} />
+          </div>
+        </div>
+        <Button onClick={save} disabled={updateCategory.isPending}>
+          Save
+        </Button>
+      </div>
+    </Dialog>
+  )
+}
+
+// --- add images to existing category ---
+
+function AddImagesDialog({
+  categoryId,
+  open,
+  onClose,
+}: {
+  categoryId: string
+  open: boolean
+  onClose: () => void
+}) {
+  const createImage = useCreateImage()
+  const [urls, setUrls] = useState('')
+  const [results, setResults] = useState<ImportLineResult[]>([])
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setUrls('')
+      setResults([])
+    }
+  }, [open])
+
+  const submit = async () => {
+    const urlList = splitUrlList(urls)
+    if (urlList.length === 0) return
+    setBusy(true)
+    try {
+      const outcome = await importUrls(
+        urlList,
+        (input) => createImage.mutateAsync({ categoryId, ...input }),
+        setResults,
+      )
+      if (outcome.every((line) => line.ok)) onClose()
+      else setUrls(outcome.filter((line) => !line.ok).map((line) => line.url).join('\n'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <DialogTitle>Add images</DialogTitle>
+        <UrlsField value={urls} onChange={setUrls} autoFocus />
+        <ImportResults results={results} />
+        <Button onClick={() => void submit()} disabled={busy}>
+          {busy ? <Loader2 className="animate-spin" /> : <Plus />}
+          {busy ? 'Adding…' : 'Add'}
+        </Button>
+      </div>
+    </Dialog>
+  )
+}
+
+// --- edit a single image ---
+
+function EditImageDialog({
+  image,
+  onClose,
+}: {
+  image: InspirationImage | null
+  onClose: () => void
+}) {
+  const updateImage = useUpdateImage(image?.categoryId ?? '')
+  const [title, setTitle] = useState('')
+  const [imageUrl, setImageUrl] = useState('')
+  const [sourceUrl, setSourceUrl] = useState('')
+
+  useEffect(() => {
+    setTitle(image?.title ?? '')
+    setImageUrl(image?.imageUrl ?? '')
+    setSourceUrl(image?.sourceUrl ?? '')
+  }, [image])
+
+  if (!image) return null
+
+  const save = () => {
+    updateImage.mutate({ id: image.id, patch: { title, imageUrl, sourceUrl } })
+    onClose()
+  }
+
+  return (
+    <Dialog open onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <DialogTitle>Edit image</DialogTitle>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="edit-title">Title</Label>
+          <Input id="edit-title" value={title} onChange={(event) => setTitle(event.target.value)} />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="edit-image-url">Image link (direct link to the picture)</Label>
+          <Input
+            id="edit-image-url"
+            value={imageUrl}
+            onChange={(event) => setImageUrl(event.target.value)}
+            placeholder="https://i.pinimg.com/…jpg"
+          />
+        </div>
+        {imageUrl && (
+          <img
+            src={imageUrl}
+            alt="Preview"
+            className="max-h-48 w-full rounded-md bg-muted object-contain"
+            onError={(event) => ((event.target as HTMLImageElement).style.display = 'none')}
+            onLoad={(event) => ((event.target as HTMLImageElement).style.display = '')}
+          />
+        )}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="edit-source-url">Source link (page that opens on tap)</Label>
+          <Input
+            id="edit-source-url"
+            value={sourceUrl}
+            onChange={(event) => setSourceUrl(event.target.value)}
+          />
+        </div>
+        <Button onClick={save} disabled={updateImage.isPending}>
+          Save
+        </Button>
+      </div>
+    </Dialog>
+  )
+}
+
+// --- selected category panel: category actions + image list ---
+
+function CategoryPanel({
+  category,
+  onDeleted,
+}: {
+  category: Category
+  onDeleted: () => void
+}) {
+  const { data: images, isLoading, error } = useGallery(category.id)
   const updateCategory = useUpdateCategory()
   const deleteCategory = useDeleteCategory()
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const updateImage = useUpdateImage(category.id)
+  const deleteImage = useDeleteImage(category.id)
+  const [editingCategory, setEditingCategory] = useState(false)
+  const [editingImage, setEditingImage] = useState<InspirationImage | null>(null)
+  const [addingImages, setAddingImages] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null) // 'category' or image id
+
+  useEffect(() => setConfirmDelete(null), [category.id])
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Manage Categories</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-2">
-        {(categories ?? []).map((category) => (
-          <div key={category.id} className="flex items-center justify-between gap-2 rounded-md border p-3">
-            <span className={category.archived ? 'text-muted-foreground line-through' : ''}>
-              {`${category.emoji} ${category.name}`.trim()}
-            </span>
-            <span className="flex gap-1">
-              <Link to={`/gallery/${category.id}`} aria-label={`${category.name} gallery`}>
-                <Button variant="ghost" size="icon">
-                  <Images />
-                </Button>
-              </Link>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={category.archived ? 'Unarchive category' : 'Archive category'}
-                onClick={() =>
-                  updateCategory.mutate({
-                    id: category.id,
-                    patch: { archived: !category.archived },
-                  })
-                }
-              >
-                {category.archived ? <ArchiveRestore /> : <Archive />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Delete category"
-                className="text-destructive"
-                onClick={() => {
-                  if (confirmDeleteId !== category.id) {
-                    setConfirmDeleteId(category.id)
-                    return
-                  }
-                  deleteCategory.mutate(category.id)
-                  setConfirmDeleteId(null)
-                }}
-              >
-                <Trash2 />
-              </Button>
-            </span>
-            {confirmDeleteId === category.id && (
-              <span className="text-xs text-destructive">Tap again to delete</span>
-            )}
+    <section className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2 rounded-xl border p-3">
+        <span className={cn('min-w-0 truncate font-semibold', category.archived && 'line-through')}>
+          {`${category.emoji} ${category.name}`.trim()}
+          {category.archived && (
+            <span className="ml-2 text-xs font-normal text-muted-foreground">archived</span>
+          )}
+        </span>
+        <span className="flex shrink-0 gap-0.5">
+          <Link to={`/gallery/${category.id}`} aria-label="Open gallery">
+            <Button variant="ghost" size="icon">
+              <Images />
+            </Button>
+          </Link>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Rename category"
+            onClick={() => setEditingCategory(true)}
+          >
+            <Pencil />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={category.archived ? 'Unarchive category' : 'Archive category'}
+            onClick={() =>
+              updateCategory.mutate({ id: category.id, patch: { archived: !category.archived } })
+            }
+          >
+            {category.archived ? <ArchiveRestore /> : <Archive />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Delete category"
+            className={cn('text-destructive', confirmDelete === 'category' && 'bg-destructive/10')}
+            onClick={() => {
+              if (confirmDelete !== 'category') {
+                setConfirmDelete('category')
+                return
+              }
+              deleteCategory.mutate(category.id)
+              onDeleted()
+            }}
+          >
+            <Trash2 />
+          </Button>
+        </span>
+      </div>
+      {confirmDelete === 'category' && (
+        <p className="text-center text-xs text-destructive">
+          Tap the trash icon again to delete "{category.name}" — its images stay in the database
+          but become unreachable.
+        </p>
+      )}
+
+      <Button variant="outline" onClick={() => setAddingImages(true)}>
+        <Plus /> Add images
+      </Button>
+
+      {error && <QueryError error={error} />}
+      {isLoading && (
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-[74px] w-full" />
+          <Skeleton className="h-[74px] w-full" />
+        </div>
+      )}
+      {!isLoading && !error && (images ?? []).length === 0 && (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          No images yet — add some with the button above.
+        </p>
+      )}
+
+      {(images ?? []).map((image) => (
+        <div
+          key={image.id}
+          className={cn(
+            'flex items-center gap-3 rounded-md border p-2',
+            image.archived && 'opacity-50',
+          )}
+        >
+          <Thumb image={image} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">{image.title || 'Untitled'}</p>
+            <a
+              href={image.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex max-w-full items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+            >
+              <span className="truncate">{image.sourceUrl}</span>
+              <ExternalLink className="size-3 shrink-0" />
+            </a>
+            <p className="flex items-center gap-1 text-xs text-muted-foreground">
+              {image.rating ? (
+                <>
+                  {image.rating} <Star className="size-3 fill-star text-star" />
+                </>
+              ) : (
+                'not voted'
+              )}
+              {image.archived && ' · archived'}
+            </p>
           </div>
-        ))}
-        {(categories ?? []).length === 0 && (
-          <p className="text-sm text-muted-foreground">No categories yet.</p>
-        )}
-      </CardContent>
-    </Card>
+          <div className="flex shrink-0 gap-0.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Edit image"
+              onClick={() => setEditingImage(image)}
+            >
+              <Pencil />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={image.archived ? 'Unarchive image' : 'Archive image'}
+              onClick={() =>
+                updateImage.mutate({ id: image.id, patch: { archived: !image.archived } })
+              }
+            >
+              {image.archived ? <ArchiveRestore /> : <Archive />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={confirmDelete === image.id ? 'Confirm delete' : 'Delete image'}
+              className={cn('text-destructive', confirmDelete === image.id && 'bg-destructive/10')}
+              onClick={() => {
+                if (confirmDelete !== image.id) {
+                  setConfirmDelete(image.id)
+                  return
+                }
+                deleteImage.mutate(image.id)
+                setConfirmDelete(null)
+              }}
+            >
+              <Trash2 />
+            </Button>
+          </div>
+        </div>
+      ))}
+
+      <EditCategoryDialog
+        category={editingCategory ? category : null}
+        onClose={() => setEditingCategory(false)}
+      />
+      <EditImageDialog image={editingImage} onClose={() => setEditingImage(null)} />
+      <AddImagesDialog
+        categoryId={category.id}
+        open={addingImages}
+        onClose={() => setAddingImages(false)}
+      />
+    </section>
   )
 }
 
+// --- page ---
+
 export function AdminPage() {
+  const { data: categories } = useCategories()
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+
+  const all = useMemo(() => categories ?? [], [categories])
+  const selected = all.find((category) => category.id === selectedId) ?? null
+
+  // Auto-select the first category once loaded.
+  useEffect(() => {
+    if (!selectedId && all.length > 0) setSelectedId(all[0].id)
+  }, [all, selectedId])
+
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-lg flex-col gap-4 p-4">
       <header className="flex items-center gap-2">
@@ -284,10 +602,52 @@ export function AdminPage() {
         </Link>
         <h1 className="text-xl font-semibold">Admin</h1>
       </header>
-      <CreateCategorySection />
-      <ImportSection />
-      <ManageImagesSection />
-      <ManageCategoriesSection />
+
+      <div className="flex flex-wrap gap-2">
+        {all.map((category) => (
+          <button
+            key={category.id}
+            type="button"
+            onClick={() => setSelectedId(category.id)}
+            className={cn(
+              'rounded-full border px-3.5 py-2 text-sm font-medium transition-colors',
+              category.id === selectedId
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'bg-background hover:bg-accent',
+              category.archived && 'opacity-50',
+            )}
+          >
+            {`${category.emoji} ${category.name}`.trim()}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setCreating(true)}
+          aria-label="New category"
+          className="flex items-center gap-1 rounded-full border border-dashed px-3.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Plus className="size-4" /> New
+        </button>
+      </div>
+
+      {selected ? (
+        <CategoryPanel
+          key={selected.id}
+          category={selected}
+          onDeleted={() => setSelectedId(null)}
+        />
+      ) : (
+        <p className="py-10 text-center text-sm text-muted-foreground">
+          {all.length === 0 ? 'Create your first category with the New button.' : 'Pick a category.'}
+        </p>
+      )}
+
+      <CreateCategoryDialog
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={setSelectedId}
+        nextOrder={all.length}
+      />
     </main>
   )
 }

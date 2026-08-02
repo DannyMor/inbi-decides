@@ -72,12 +72,17 @@ export async function fetchCategories(): Promise<Category[]> {
   return snap.docs.map(toCategory)
 }
 
-export async function createCategory(input: { name: string; emoji: string; order: number }) {
-  await addDoc(collection(db(), CATEGORIES), {
+export async function createCategory(input: {
+  name: string
+  emoji: string
+  order: number
+}): Promise<string> {
+  const ref = await addDoc(collection(db(), CATEGORIES), {
     ...input,
     archived: false,
     createdAt: serverTimestamp(),
   })
+  return ref.id
 }
 
 export async function updateCategory(id: string, patch: Partial<Omit<Category, 'id' | 'createdAt'>>) {
