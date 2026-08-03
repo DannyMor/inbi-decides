@@ -3,6 +3,7 @@ import { AdminPage } from '@/pages/admin'
 import { GalleryPage } from '@/pages/gallery'
 import { HomePage } from '@/pages/home'
 import { LoginPage } from '@/pages/login'
+import { SharePage } from '@/pages/share'
 import { VotingPage } from '@/pages/voting'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/lib/auth'
@@ -43,6 +44,7 @@ function App() {
         <Route path="/vote/:categoryId" element={<VotingPage />} />
         <Route path="/gallery/:categoryId" element={<GalleryPage />} />
         <Route path="/admin" element={isAdmin ? <AdminPage /> : <Navigate to="/" replace />} />
+        <Route path="/share" element={isAdmin ? <SharePage /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </HashRouter>

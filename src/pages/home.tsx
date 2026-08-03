@@ -1,4 +1,4 @@
-import { Check, LogOut, Settings } from 'lucide-react'
+import { Check, LogOut, Plus, Settings } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -82,6 +82,16 @@ export function HomePage() {
           <CategoryRow key={category.id} category={category} />
         ))}
       </div>
+
+      {isAdmin && (
+        <Link
+          to="/share"
+          aria-label="Add an image"
+          className="fixed bottom-6 right-6 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform active:scale-90"
+        >
+          <Plus className="size-7" />
+        </Link>
+      )}
     </main>
   )
 }

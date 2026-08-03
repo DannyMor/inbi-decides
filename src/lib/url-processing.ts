@@ -63,6 +63,14 @@ export function titleFromUrl(url: string): string {
   }
 }
 
+/** First http(s) URL inside free text (share sheets send "Look at this! https://…"). */
+export function extractFirstUrl(text: string): string | null {
+  const match = text.match(/https?:\/\/\S+/)
+  if (!match) return null
+  // Trim punctuation that sentence context glues onto the URL.
+  return match[0].replace(/[)\],.!?'"]+$/, '')
+}
+
 /** Split a pasted blob into candidate URLs, one per line. */
 export function splitUrlList(raw: string): string[] {
   return raw

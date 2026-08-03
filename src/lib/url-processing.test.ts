@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  extractFirstUrl,
   extractGoogleImagesUrl,
   extractPinterestPinId,
   isPinterestShortLink,
@@ -72,6 +73,22 @@ describe('extractPinterestPinId', () => {
     expect(extractPinterestPinId('https://www.pinterest.com/danny/board-name/')).toBe(null)
     expect(extractPinterestPinId('https://notpinterest.com/pin/123/')).toBe(null)
     expect(extractPinterestPinId('https://evil.com/?x=pinterest.com/pin/1')).toBe(null)
+  })
+})
+
+describe('extractFirstUrl', () => {
+  it('pulls the first URL out of share-sheet text', () => {
+    expect(extractFirstUrl('Check this out! https://pin.it/abc123 so cool')).toBe(
+      'https://pin.it/abc123',
+    )
+  })
+
+  it('strips trailing sentence punctuation', () => {
+    expect(extractFirstUrl('look: https://example.com/a.jpg!')).toBe('https://example.com/a.jpg')
+  })
+
+  it('returns null when there is no URL', () => {
+    expect(extractFirstUrl('just some text')).toBe(null)
   })
 })
 

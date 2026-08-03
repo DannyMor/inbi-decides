@@ -24,6 +24,17 @@ export default defineConfig({
         orientation: 'portrait',
         start_url: '/inbi-decides/',
         scope: '/inbi-decides/',
+        // Android/Chrome: makes the installed app appear in the system share
+        // sheet. iOS Safari ignores this (no PWA share-target support).
+        share_target: {
+          action: '/inbi-decides/index.html',
+          method: 'GET',
+          params: {
+            title: 'title',
+            text: 'text',
+            url: 'url',
+          },
+        },
         icons: [
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
