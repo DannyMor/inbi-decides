@@ -20,7 +20,10 @@ export function GalleryPage() {
   const { categoryId = '' } = useParams()
   const { data: categories } = useCategories()
   const { data: images, isLoading, error } = useGallery(categoryId)
-  const [selected, setSelected] = useState<InspirationImage | null>(null)
+  // Store only the id: the dialog must render the LIVE record so rating
+  // changes made inside it show immediately.
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const selected = (images ?? []).find((image) => image.id === selectedId) ?? null
   const [search, setSearch] = useState('')
   const [starFilter, setStarFilter] = useState<StarFilter>('all')
   const [showArchived, setShowArchived] = useState(false)
@@ -133,7 +136,7 @@ export function GalleryPage() {
               <button
                 key={image.id}
                 type="button"
-                onClick={() => setSelected(image)}
+                onClick={() => setSelectedId(image.id)}
                 className={cn(
                   'overflow-hidden rounded-lg text-left transition-transform active:scale-95',
                   image.archived && 'opacity-50',
@@ -146,7 +149,7 @@ export function GalleryPage() {
         </section>
       ))}
 
-      <ImageDetailDialog image={selected} onClose={() => setSelected(null)} />
+      <ImageDetailDialog image={selected} onClose={() => setSelectedId(null)} />
     </main>
   )
 }

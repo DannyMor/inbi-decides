@@ -30,10 +30,14 @@ export function ImageDetailDialog({ image, onClose }: ImageDetailDialogProps) {
   const [notes, setNotes] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
 
+  // Reset local edit state only when a DIFFERENT image is opened — the image
+  // object itself gets replaced on every optimistic cache update.
+  const imageId = image?.id
   useEffect(() => {
     setNotes(image?.notes ?? '')
     setConfirmDelete(false)
-  }, [image])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageId])
 
   if (!image) return null
 
@@ -45,7 +49,7 @@ export function ImageDetailDialog({ image, onClose }: ImageDetailDialogProps) {
     <Dialog open onClose={onClose}>
       <div className="flex flex-col gap-4">
         <DialogTitle>{image.title || 'Untitled'}</DialogTitle>
-        <SmartImage image={image} className="max-h-[50dvh] w-full" />
+        <SmartImage image={image} fit="contain" className="max-h-[50dvh] w-full" />
         <StarRating
           value={image.rating}
           onRate={(rating: Rating) => rate.mutate({ id: image.id, rating })}

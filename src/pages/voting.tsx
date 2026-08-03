@@ -122,6 +122,7 @@ export function VotingPage() {
         <SmartImage
           key={current.id}
           image={current}
+          fit="contain"
           className="max-h-[60dvh] w-full"
           brokenActions={
             <Button variant="outline" size="sm" onClick={handleSkip}>
