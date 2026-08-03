@@ -337,7 +337,7 @@ function EditImageDialog({
   image: InspirationImage | null
   onClose: () => void
 }) {
-  const updateImage = useUpdateImage(image?.categoryId ?? '')
+  const updateImage = useUpdateImage()
   const [title, setTitle] = useState('')
   const [imageUrl, setImageUrl] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
@@ -376,7 +376,11 @@ function EditImageDialog({
   }
 
   const save = () => {
-    updateImage.mutate({ id: image.id, patch: { title, imageUrl, sourceUrl } })
+    updateImage.mutate({
+      id: image.id,
+      categoryId: image.categoryId,
+      patch: { title, imageUrl, sourceUrl },
+    })
     onClose()
   }
 
@@ -445,8 +449,8 @@ function CategoryPanel({
   const { data: images, isLoading, error } = useGallery(category.id)
   const updateCategory = useUpdateCategory()
   const deleteCategory = useDeleteCategory()
-  const updateImage = useUpdateImage(category.id)
-  const deleteImage = useDeleteImage(category.id)
+  const updateImage = useUpdateImage()
+  const deleteImage = useDeleteImage()
   const [editingCategory, setEditingCategory] = useState(false)
   const [editingImage, setEditingImage] = useState<InspirationImage | null>(null)
   const [addingImages, setAddingImages] = useState(false)
@@ -574,7 +578,11 @@ function CategoryPanel({
               size="icon"
               aria-label={image.archived ? 'Unarchive image' : 'Archive image'}
               onClick={() =>
-                updateImage.mutate({ id: image.id, patch: { archived: !image.archived } })
+                updateImage.mutate({
+                  id: image.id,
+                  categoryId: image.categoryId,
+                  patch: { archived: !image.archived },
+                })
               }
             >
               {image.archived ? <ArchiveRestore /> : <Archive />}
@@ -589,7 +597,7 @@ function CategoryPanel({
                   setConfirmDelete(image.id)
                   return
                 }
-                deleteImage.mutate(image.id)
+                deleteImage.mutate({ id: image.id, categoryId: image.categoryId })
                 setConfirmDelete(null)
               }}
             >

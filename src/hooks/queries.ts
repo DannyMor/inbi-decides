@@ -53,12 +53,17 @@ function invalidateImages(queryClient: ReturnType<typeof useQueryClient>, catego
   void queryClient.invalidateQueries({ queryKey: keys.newCount(categoryId) })
 }
 
+// Every image mutation carries categoryId in its variables. Deriving it from
+// component props is unsafe: a dialog can close before the mutation settles,
+// and the callbacks would then see a stale/empty category and refresh nothing.
+
 /** Rate from the voting screen: optimistically pop the queue so the next image shows instantly. */
-export function useRateFromQueue(categoryId: string) {
+export function useRateFromQueue() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, rating }: { id: string; rating: Rating }) => rateImage(id, rating),
-    onMutate: async ({ id }) => {
+    mutationFn: ({ id, rating }: { id: string; categoryId: string; rating: Rating }) =>
+      rateImage(id, rating),
+    onMutate: async ({ id, categoryId }) => {
       await queryClient.cancelQueries({ queryKey: keys.queue(categoryId) })
       const previous = queryClient.getQueryData<InspirationImage[]>(keys.queue(categoryId))
       queryClient.setQueryData<InspirationImage[]>(keys.queue(categoryId), (queue) =>
@@ -66,19 +71,20 @@ export function useRateFromQueue(categoryId: string) {
       )
       return { previous }
     },
-    onError: (_error, _vars, context) => {
+    onError: (_error, { categoryId }, context) => {
       if (context?.previous) queryClient.setQueryData(keys.queue(categoryId), context.previous)
     },
-    onSettled: () => invalidateImages(queryClient, categoryId),
+    onSettled: (_data, _error, { categoryId }) => invalidateImages(queryClient, categoryId),
   })
 }
 
 /** Re-rate from the gallery: optimistic in-place update. */
-export function useRateFromGallery(categoryId: string) {
+export function useRateFromGallery() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, rating }: { id: string; rating: Rating | null }) => rateImage(id, rating),
-    onMutate: async ({ id, rating }) => {
+    mutationFn: ({ id, rating }: { id: string; categoryId: string; rating: Rating | null }) =>
+      rateImage(id, rating),
+    onMutate: async ({ id, categoryId, rating }) => {
       await queryClient.cancelQueries({ queryKey: keys.gallery(categoryId) })
       const previous = queryClient.getQueryData<InspirationImage[]>(keys.gallery(categoryId))
       queryClient.setQueryData<InspirationImage[]>(keys.gallery(categoryId), (images) =>
@@ -86,40 +92,69 @@ export function useRateFromGallery(categoryId: string) {
       )
       return { previous }
     },
-    onError: (_error, _vars, context) => {
+    onError: (_error, { categoryId }, context) => {
       if (context?.previous) queryClient.setQueryData(keys.gallery(categoryId), context.previous)
     },
-    onSettled: () => invalidateImages(queryClient, categoryId),
+    onSettled: (_data, _error, { categoryId }) => invalidateImages(queryClient, categoryId),
   })
 }
 
-export function useUpdateNotes(categoryId: string) {
+export function useUpdateNotes() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, notes }: { id: string; notes: string }) => updateImageNotes(id, notes),
-    onSettled: () => invalidateImages(queryClient, categoryId),
+    mutationFn: ({ id, notes }: { id: string; categoryId: string; notes: string }) =>
+      updateImageNotes(id, notes),
+    onSettled: (_data, _error, { categoryId }) => invalidateImages(queryClient, categoryId),
   })
 }
 
-export function useUpdateImage(categoryId: string) {
+type ImagePatch = Partial<
+  Pick<InspirationImage, 'title' | 'imageUrl' | 'sourceUrl' | 'archived' | 'categoryId'>
+>
+
+/** Optimistic in-place patch (archive toggles, URL/title edits show instantly). */
+export function useUpdateImage() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({
-      id,
-      patch,
-    }: {
-      id: string
-      patch: Partial<Pick<InspirationImage, 'title' | 'imageUrl' | 'sourceUrl' | 'archived' | 'categoryId'>>
-    }) => updateImage(id, patch),
-    onSettled: () => invalidateImages(queryClient, categoryId),
+    mutationFn: ({ id, patch }: { id: string; categoryId: string; patch: ImagePatch }) =>
+      updateImage(id, patch),
+    onMutate: async ({ id, categoryId, patch }) => {
+      await queryClient.cancelQueries({ queryKey: keys.gallery(categoryId) })
+      const previous = queryClient.getQueryData<InspirationImage[]>(keys.gallery(categoryId))
+      queryClient.setQueryData<InspirationImage[]>(keys.gallery(categoryId), (images) =>
+        (images ?? []).map((image) => (image.id === id ? { ...image, ...patch } : image)),
+      )
+      return { previous }
+    },
+    onError: (_error, { categoryId }, context) => {
+      if (context?.previous) queryClient.setQueryData(keys.gallery(categoryId), context.previous)
+    },
+    onSettled: (_data, _error, { categoryId }) => invalidateImages(queryClient, categoryId),
   })
 }
 
-export function useDeleteImage(categoryId: string) {
+/** Optimistic removal from gallery and queue — the row disappears immediately. */
+export function useDeleteImage() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => deleteImage(id),
-    onSettled: () => invalidateImages(queryClient, categoryId),
+    mutationFn: ({ id }: { id: string; categoryId: string }) => deleteImage(id),
+    onMutate: async ({ id, categoryId }) => {
+      await queryClient.cancelQueries({ queryKey: keys.gallery(categoryId) })
+      await queryClient.cancelQueries({ queryKey: keys.queue(categoryId) })
+      const previousGallery = queryClient.getQueryData<InspirationImage[]>(keys.gallery(categoryId))
+      const previousQueue = queryClient.getQueryData<InspirationImage[]>(keys.queue(categoryId))
+      const drop = (images?: InspirationImage[]) => (images ?? []).filter((entry) => entry.id !== id)
+      queryClient.setQueryData<InspirationImage[]>(keys.gallery(categoryId), drop)
+      queryClient.setQueryData<InspirationImage[]>(keys.queue(categoryId), drop)
+      return { previousGallery, previousQueue }
+    },
+    onError: (_error, { categoryId }, context) => {
+      if (context?.previousGallery)
+        queryClient.setQueryData(keys.gallery(categoryId), context.previousGallery)
+      if (context?.previousQueue)
+        queryClient.setQueryData(keys.queue(categoryId), context.previousQueue)
+    },
+    onSettled: (_data, _error, { categoryId }) => invalidateImages(queryClient, categoryId),
   })
 }
 

@@ -55,7 +55,7 @@ export function SmartImage({ image, className, fit = 'cover', brokenActions }: S
     // would never intersect the viewport and therefore never load).
     return (
       <div className={cn('flex w-full items-center justify-center', className)}>
-        {status === 'loading' && <Skeleton className="h-72 w-full rounded-lg" />}
+        {status === 'loading' && <Skeleton className="h-72 max-h-full w-full rounded-lg" />}
         <img
           src={image.imageUrl}
           alt={image.title || 'Inspiration image'}

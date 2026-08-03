@@ -22,11 +22,10 @@ interface ImageDetailDialogProps {
 
 export function ImageDetailDialog({ image, onClose }: ImageDetailDialogProps) {
   const { isAdmin } = useAuth()
-  const categoryId = image?.categoryId ?? ''
-  const rate = useRateFromGallery(categoryId)
-  const updateNotes = useUpdateNotes(categoryId)
-  const updateImage = useUpdateImage(categoryId)
-  const deleteImage = useDeleteImage(categoryId)
+  const rate = useRateFromGallery()
+  const updateNotes = useUpdateNotes()
+  const updateImage = useUpdateImage()
+  const deleteImage = useDeleteImage()
   const [notes, setNotes] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -42,7 +41,8 @@ export function ImageDetailDialog({ image, onClose }: ImageDetailDialogProps) {
   if (!image) return null
 
   const saveNotes = () => {
-    if (notes !== image.notes) updateNotes.mutate({ id: image.id, notes })
+    if (notes !== image.notes)
+      updateNotes.mutate({ id: image.id, categoryId: image.categoryId, notes })
   }
 
   return (
@@ -52,7 +52,9 @@ export function ImageDetailDialog({ image, onClose }: ImageDetailDialogProps) {
         <SmartImage image={image} fit="contain" className="max-h-[50dvh] w-full" />
         <StarRating
           value={image.rating}
-          onRate={(rating: Rating) => rate.mutate({ id: image.id, rating })}
+          onRate={(rating: Rating) =>
+            rate.mutate({ id: image.id, categoryId: image.categoryId, rating })
+          }
           size="lg"
         />
         <div className="flex flex-col gap-2">
@@ -77,7 +79,11 @@ export function ImageDetailDialog({ image, onClose }: ImageDetailDialogProps) {
           <Button
             variant="outline"
             onClick={() => {
-              updateImage.mutate({ id: image.id, patch: { archived: !image.archived } })
+              updateImage.mutate({
+                id: image.id,
+                categoryId: image.categoryId,
+                patch: { archived: !image.archived },
+              })
               onClose()
             }}
           >
@@ -92,7 +98,7 @@ export function ImageDetailDialog({ image, onClose }: ImageDetailDialogProps) {
                   setConfirmDelete(true)
                   return
                 }
-                deleteImage.mutate(image.id)
+                deleteImage.mutate({ id: image.id, categoryId: image.categoryId })
                 onClose()
               }}
             >
