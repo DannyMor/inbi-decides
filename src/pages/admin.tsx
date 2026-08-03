@@ -90,7 +90,7 @@ function UrlsField({
 function Thumb({ image }: { image: InspirationImage }) {
   const [broken, setBroken] = useState(false)
   useEffect(() => setBroken(false), [image.imageUrl])
-  if (broken) {
+  if (broken || !/^https?:\/\//.test(image.imageUrl)) {
     return (
       <div className="flex size-14 shrink-0 items-center justify-center rounded-md bg-muted text-lg">
         🚫

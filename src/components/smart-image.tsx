@@ -24,7 +24,10 @@ export function SmartImage({ image, className, fit = 'cover', brokenActions }: S
     setStatus('loading')
   }, [image.imageUrl])
 
-  if (status === 'error') {
+  // An empty/invalid URL fires neither onLoad nor onError — fail it up front.
+  const validUrl = /^https?:\/\//.test(image.imageUrl)
+
+  if (status === 'error' || !validUrl) {
     return (
       <div
         className={cn(
