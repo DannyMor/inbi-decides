@@ -102,15 +102,31 @@ async function fetchOpenGraph(url: string): Promise<{ imageUrl: string; title: s
 }
 
 /**
- * Pinterest app "share" links. These are redirects that no free CORS-friendly
- * service can follow (Pinterest antibot blocks proxies), so we reject them
- * with guidance instead of saving a URL that can never render.
+ * Pinterest app "share" links. Browsers can't follow the redirect themselves
+ * (no CORS), so resolution goes through the optional Cloudflare Worker in
+ * /worker. Without a configured resolver these are rejected with guidance.
  */
 export function isPinterestShortLink(url: string): boolean {
   try {
     return new URL(url).hostname === 'pin.it'
   } catch {
     return false
+  }
+}
+
+const PINIT_RESOLVER_URL: string | undefined = import.meta.env.VITE_PINIT_RESOLVER_URL
+
+export const hasPinItResolver = Boolean(PINIT_RESOLVER_URL)
+
+async function resolvePinItViaWorker(url: string): Promise<string | null> {
+  if (!PINIT_RESOLVER_URL) return null
+  try {
+    const response = await fetch(`${PINIT_RESOLVER_URL}/?url=${encodeURIComponent(url)}`)
+    if (!response.ok) return null
+    const payload = (await response.json()) as { resolvedUrl?: string }
+    return typeof payload.resolvedUrl === 'string' ? payload.resolvedUrl : null
+  } catch {
+    return null
   }
 }
 
@@ -215,6 +231,16 @@ export async function resolveUrl(rawUrl: string): Promise<ResolvedImage> {
   }
 
   if (isPinterestShortLink(url)) {
+    const fullUrl = await resolvePinItViaWorker(url)
+    const pinId = fullUrl ? extractPinterestPinId(fullUrl) : null
+    if (pinId) {
+      const pin = await fetchPinterestPin(pinId)
+      if (pin) {
+        // Canonical pin page, without the share-tracking /sent/?invite_code=… tail.
+        const sourceUrl = `https://www.pinterest.com/pin/${pinId}/`
+        return { imageUrl: pin.imageUrl, sourceUrl, title: pin.title, resolved: true }
+      }
+    }
     throw new Error(
       'pin.it share links cannot be resolved — open the link in a browser and paste the full pinterest.com/pin/… address instead',
     )

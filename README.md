@@ -67,6 +67,25 @@ VITE_FIREBASE_APP_ID
 Every push to `main` builds and deploys automatically
 ([deploy.yml](.github/workflows/deploy.yml)).
 
+## Optional: pin.it resolver (Cloudflare Worker)
+
+Pinterest's app shares `pin.it` short links, which browsers cannot resolve
+(no CORS on the redirect). A ~50-line Worker in [worker/](worker/) does the
+hop server-side — free tier, no card, effectively zero maintenance.
+
+```bash
+cd worker
+npx wrangler deploy   # opens a browser to log in / sign up to Cloudflare
+```
+
+Copy the printed `https://inbi-pinit-resolver.<subdomain>.workers.dev` URL into:
+
+- GitHub secret `VITE_PINIT_RESOLVER_URL` (then re-run the deploy), and
+- `.env.local` for local dev.
+
+Without it the app still works — pin.it links just get a guided
+"open in browser, share again" flow instead of resolving instantly.
+
 ## Local development
 
 ```bash

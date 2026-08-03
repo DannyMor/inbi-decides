@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { useCategories, useCreateCategory, useCreateImage } from '@/hooks/queries'
 import {
   extractFirstUrl,
+  hasPinItResolver,
   isPinterestShortLink,
   resolveUrl,
   testImageReachable,
@@ -47,7 +48,9 @@ export function SharePage() {
     const trimmed = extractFirstUrl(candidate) ?? candidate.trim()
     if (!trimmed) return
     setUrl(trimmed)
-    if (isPinterestShortLink(trimmed)) {
+    // With the Worker configured, pin.it goes through resolveUrl like any
+    // other link; the guided browser hop is only the no-resolver fallback.
+    if (isPinterestShortLink(trimmed) && !hasPinItResolver) {
       setStatus({ kind: 'shortlink', url: trimmed })
       return
     }
